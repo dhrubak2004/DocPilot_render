@@ -5,14 +5,7 @@ import shutil
 import time
 from flask import Flask, request, jsonify, render_template, session
 from werkzeug.utils import secure_filename
-from unstructured.partition.pdf import partition_pdf
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.documents import Document
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 app = Flask(__name__)
 load_dotenv()
@@ -21,6 +14,7 @@ groq_key = os.getenv("GROQ_API_KEY")
 if groq_key:
     os.environ["GROQ_API_KEY"] = groq_key
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 app.secret_key = os.getenv("SECRET_KEY", "docpilot-secret-key-2024")
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
@@ -34,6 +28,20 @@ app.config['ALLOWED_EXTENSIONS'] = {'pdf'}
 # Per-user storage
 user_dbs = {}
 user_progress = {}
+
+# Cached embedding model (load once, reuse)
+_embeddings = None
+
+def get_embeddings():
+    global _embeddings
+    if _embeddings is None:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        _embeddings = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"batch_size": 8, "normalize_embeddings": True}
+        )
+    return _embeddings
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -49,6 +57,7 @@ def set_progress(user_id, step, message):
 
 def is_scanned_pdf(file_path):
     try:
+        from unstructured.partition.pdf import partition_pdf
         elements = partition_pdf(filename=file_path, strategy="fast")
         text_elements = [e for e in elements if "Image" not in str(type(e))]
         return len(text_elements) < 3
@@ -56,6 +65,7 @@ def is_scanned_pdf(file_path):
         return True
 
 def create_document(text, text_summary, image_base64_list, image_summary, table, table_summary):
+    from langchain_core.documents import Document
     documents = []
     for t, ts in zip(text, text_summary):
         doc = Document(page_content=ts, metadata={"id": str(uuid.uuid4()), "type": "text", "original_content": t})
@@ -87,6 +97,13 @@ def get_progress():
 
 @app.route('/upload', methods=['POST'])
 def handle_upload():
+    # Lazy imports - only loaded when a file is actually uploaded
+    from unstructured.partition.pdf import partition_pdf
+    from langchain_groq import ChatGroq
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_community.vectorstores import FAISS
+
     user_id = get_user_id()
 
     # Prevent double upload
@@ -181,7 +198,7 @@ def handle_upload():
         document = create_document(Text, text_summary, image_base64_list, image_summaries, Table, table_summary)
         user_dbs[user_id] = FAISS.from_documents(
             documents=document,
-            embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            embedding=get_embeddings()
         )
 
         # Cleanup files and old users
@@ -196,6 +213,10 @@ def handle_upload():
 
 @app.route('/query', methods=['POST'])
 def handle_query():
+    from langchain_groq import ChatGroq
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+
     user_id = get_user_id()
     db = user_dbs.get(user_id)
 
@@ -243,4 +264,5 @@ def handle_query():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(debug=False, host="0.0.0.0", port=port)
