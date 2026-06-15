@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Query System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #111;
+            color: #f4f4f9;
+        }
+        h1 {
+            text-align: center;
+            color: #ff6347;
+            margin-bottom: 40px;
+        }
+        form {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            background-color: #222;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        form label { font-size: 18px; margin-bottom: 10px; color: #f4f4f9; }
+        form input[type="text"], form input[type="file"] {
+            padding: 12px; margin-bottom: 20px;
+            border: 1px solid #333; border-radius: 5px;
+            background-color: #333; color: #f4f4f9; font-size: 16px;
+        }
+        form input[type="file"] { display: none; }
+        form label[for="file"] {
+            background-color: #ff6347; color: white;
+            padding: 12px 20px; border-radius: 5px;
+            cursor: pointer; text-align: center; font-size: 16px;
+        }
+        form button {
+            background-color: #ff6347; color: white;
+            padding: 12px 20px; border: none; border-radius: 5px;
+            cursor: pointer; font-size: 16px;
+            align-self: flex-start; margin-top: 10px;
+        }
+        form button:hover { background-color: #e55347; }
+        form button:disabled { background-color: #555; cursor: not-allowed; }
+        #result {
+            margin-top: 20px; padding: 15px;
+            border: 1px solid #333; border-radius: 5px;
+            background-color: #222; max-width: 600px;
+            margin-left: auto; margin-right: auto;
+        }
+        #answer { font-size: 18px; line-height: 1.6; }
+        #image-container img {
+            max-width: 300px; margin: 10px 0;
+            display: block; border-radius: 5px;
+        }
+        #image-container { text-align: center; }
+        #file-name { font-size: 16px; color: #f4f4f9; margin-top: 10px; text-align: center; }
+        input[type="text"]:focus { border-color: #ff6347; outline: none; }
+
+        /* Overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88);
+            z-index: 9999; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+        #loading-overlay.active { display: flex; }
+
+        /* Spinner */
+        .spinner {
+            width: 64px; height: 64px;
+            border: 6px solid #2a2a2a;
+            border-top: 6px solid #ff6347;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin-bottom: 24px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 22px;
+            font-weight: bold;
+            color: #ff6347;
+            margin-bottom: 6px;
+        }
+        .loading-sub {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 28px;
+        }
+
+        /* Steps */
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 280px;
+        }
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 15px;
+            color: #444;
+            transition: color 0.4s ease;
+        }
+        .step.active { color: #ff6347; }
+        .step.done { color: #4caf50; }
+
+        .step-icon {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            border: 2px solid #444;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+            transition: all 0.4s ease;
+            flex-shrink: 0;
+        }
+        .step.active .step-icon {
+            border-color: #ff6347;
+            background: #ff6347;
+            color: white;
+        }
+        .step.done .step-icon {
+            border-color: #4caf50;
+            background: #4caf50;
+            color: white;
+        }
+
+        /* Connector line */
+        .step-connector {
+            width: 2px; height: 14px;
+            background: #2a2a2a;
+            margin-left: 10px;
+            transition: background 0.4s ease;
+        }
+        .step-connector.done { background: #4caf50; }
+
+        #timer {
+            margin-top: 22px;
+            font-size: 12px;
+            color: #555;
+        }
+
+        #live-status {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+            min-height: 16px;
+        }
+
+        /* Success popup */
+        #success-popup {
+            display: none;
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88);
+            z-index: 10000;
+            justify-content: center; align-items: center;
+        }
+        #success-popup.active { display: flex; }
+        .popup-box {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 36px 40px;
+            text-align: center;
+            max-width: 380px;
+            width: 90%;
+        }
+        .popup-check {
+            width: 56px; height: 56px;
+            background: #4caf50;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px;
+            font-size: 26px;
+            color: white;
+            animation: popIn 0.4s ease;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            70% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+        .popup-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #f4f4f9;
+            margin-bottom: 8px;
+        }
+        .popup-msg {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .popup-btn {
+            background: #ff6347;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 6px;
+            font-size: 15px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .popup-btn:hover { background: #e55347; }
+    </style>
+</head>
+<body>
+    <h1>Document Query-Bot</h1>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-title" id="loading-title">Processing your PDF...</div>
+        <div class="loading-sub">Please do not close this page.</div>
+        <div class="progress-steps">
+            <div class="step" id="step1">
+                <div class="step-icon" id="icon1">1</div>
+                <span>Uploading file</span>
+            </div>
+            <div class="step-connector" id="conn1"></div>
+            <div class="step" id="step2">
+                <div class="step-icon" id="icon2">2</div>
+                <span>Extracting content from PDF</span>
+            </div>
+            <div class="step-connector" id="conn2"></div>
+            <div class="step" id="step3">
+                <div class="step-icon" id="icon3">3</div>
+                <span>Summarizing content with AI</span>
+            </div>
+            <div class="step-connector" id="conn3"></div>
+            <div class="step" id="step4">
+                <div class="step-icon" id="icon4">4</div>
+                <span>Building vector store</span>
+            </div>
+        </div>
+        <div id="timer">Elapsed: <span id="elapsed">0</span>s</div>
+        <div id="live-status"></div>
+    </div>
+
+    <!-- Success Popup -->
+    <div id="success-popup">
+        <div class="popup-box">
+            <div class="popup-check">&#10003;</div>
+            <div class="popup-title">Processing Complete</div>
+            <div class="popup-msg" id="popup-msg">Your document has been processed successfully. You can now ask questions.</div>
+            <button class="popup-btn" onclick="closePopup()">OK, Start Asking</button>
+        </div>
+    </div>
+
+    <!-- File Upload Form -->
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="file" name="file" accept=".pdf" required>
+        <label for="file">Choose a PDF file...</label>
+        <div id="file-name"></div>
+        <button type="submit" id="uploadBtn">Upload</button>
+    </form>
+
+    <!-- Query Form -->
+    <form id="queryForm">
+        <label for="query">Ask a question:</label>
+        <input type="text" id="query" name="query" required>
+        <button type="submit" id="queryBtn">Submit</button>
+    </form>
+
+    <!-- Result Section -->
+    <div id="result" style="display: none;">
+        <h2>Answer:</h2>
+        <p id="answer"></p>
+        <div id="image-container"></div>
+    </div>
+
+    <script>
+        let timerInterval;
+        let pollInterval;
+        let elapsedSeconds = 0;
+
+        document.getElementById("file").addEventListener("change", function () {
+            const fileName = this.files[0] ? this.files[0].name : "No file chosen";
+            document.getElementById("file-name").textContent = "Selected file: " + fileName;
+        });
+
+        function startLoading(title) {
+            elapsedSeconds = 0;
+            document.getElementById("loading-title").textContent = title;
+            document.getElementById("elapsed").textContent = "0";
+            document.getElementById("live-status").textContent = "";
+
+            // Reset all steps
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById("step" + i).className = "step";
+                document.getElementById("icon" + i).textContent = i;
+                if (i < 4) document.getElementById("conn" + i).className = "step-connector";
+            }
+
+            document.getElementById("loading-overlay").classList.add("active");
+
+            timerInterval = setInterval(() => {
+                elapsedSeconds++;
+                document.getElementById("elapsed").textContent = elapsedSeconds;
+            }, 1000);
+        }
+
+        function startPolling() {
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch("/progress");
+                    const data = await res.json();
+                    updateSteps(data.step, data.message);
+                } catch (e) {}
+            }, 800);
+        }
+
+        function updateSteps(step, message) {
+            for (let i = 1; i <= 4; i++) {
+                const el = document.getElementById("step" + i);
+                const icon = document.getElementById("icon" + i);
+                if (i < step) {
+                    el.className = "step done";
+                    icon.textContent = "v";
+                    if (i < 4) document.getElementById("conn" + i).className = "step-connector done";
+                } else if (i === step) {
+                    el.className = "step active";
+                    icon.textContent = i;
+                } else {
+                    el.className = "step";
+                    icon.textContent = i;
+                }
+            }
+            document.getElementById("live-status").textContent = message;
+        }
+
+        function stopLoading(successMsg) {
+            clearInterval(timerInterval);
+            clearInterval(pollInterval);
+
+            // Mark all done
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById("step" + i).className = "step done";
+                document.getElementById("icon" + i).textContent = "v";
+                if (i < 4) document.getElementById("conn" + i).className = "step-connector done";
+            }
+
+            setTimeout(() => {
+                document.getElementById("loading-overlay").classList.remove("active");
+                if (successMsg) {
+                    document.getElementById("popup-msg").textContent = successMsg;
+                    document.getElementById("success-popup").classList.add("active");
+                }
+            }, 600);
+        }
+
+        function closePopup() {
+            document.getElementById("success-popup").classList.remove("active");
+        }
+
+        document.getElementById("uploadForm").addEventListener("submit", async function (e) {
+            e.preventDefault();
+            document.getElementById("uploadBtn").disabled = true;
+            startLoading("Processing your PDF...");
+            startPolling();
+
+            const formData = new FormData();
+            formData.append("file", document.getElementById("file").files[0]);
+
+            try {
+                const response = await fetch("/upload", { method: "POST", body: formData });
+                const result = await response.json();
+
+                if (response.ok) {
+                    stopLoading(result.message || "Document processed. You can now ask questions.");
+                } else {
+                    clearInterval(timerInterval);
+                    clearInterval(pollInterval);
+                    document.getElementById("loading-overlay").classList.remove("active");
+                    alert(result.error || "An error occurred during file upload.");
+                }
+            } catch (error) {
+                clearInterval(timerInterval);
+                clearInterval(pollInterval);
+                document.getElementById("loading-overlay").classList.remove("active");
+                alert("An error occurred while uploading the file.");
+            } finally {
+                document.getElementById("uploadBtn").disabled = false;
+            }
+        });
+
+        document.getElementById("queryForm").addEventListener("submit", async function (e) {
+            e.preventDefault();
+            document.getElementById("queryBtn").disabled = true;
+            startLoading("Finding answer...");
+
+            const query = document.getElementById("query").value;
+            try {
+                const response = await fetch("/query", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: query })
+                });
+                const result = await response.json();
+
+                clearInterval(timerInterval);
+                document.getElementById("loading-overlay").classList.remove("active");
+
+                if (response.ok) {
+                    document.getElementById("answer").textContent = result.answer;
+                    document.getElementById("image-container").innerHTML = result.html_image || "";
+                    document.getElementById("result").style.display = "block";
+                } else {
+                    alert(result.error || "An error occurred.");
+                }
+            } catch (error) {
+                clearInterval(timerInterval);
+                document.getElementById("loading-overlay").classList.remove("active");
+                alert("An error occurred while querying.");
+            } finally {
+                document.getElementById("queryBtn").disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
